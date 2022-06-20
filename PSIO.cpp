@@ -12,7 +12,8 @@
 #include "SimpleSerial.h"
 #include "opencv2/core/utils/logger.hpp"
 #include "Engine.h"
-
+#include "Robot.h"
+#include <vector>
 
 char com_port[] = "\\\\.\\COM8";
 DWORD COM_BAUD_RATE = CBR_9600;
@@ -62,62 +63,14 @@ enum FIG {
     ERR = -1
 };
 
-class Robot {
-private:
-    SimpleSerial Serial;
-public:
-    Robot() : Serial(com_port, COM_BAUD_RATE) {
-        std::cout << "Stan COM (0/1) = " << Serial.connected_ << std::endl;
-        std::this_thread::sleep_for(2000ms);
-        std::cout << "OK, Home!" << std::endl;
-        this->Home();
-        std::cout << "Inicjalizacja robota = OK" << std::endl;
-    }
-    void Pick() {
-        string read_in = "a";
-        char* to_send = &read_in[0];
-        bool is_sent = Serial.WriteSerialPort(to_send);
-        std::this_thread::sleep_for(00ms);
-        this->WaitForResponse();
-    }
-    void Place() {
-        string read_in = "b";
-        char* to_send = &read_in[0];
-        bool is_sent = Serial.WriteSerialPort(to_send);
-        std::this_thread::sleep_for(100ms);
-        this->WaitForResponse();
-    }
-    void Home() {
-        string read_in = "h";
-        char* to_send = &read_in[0];
-        bool is_sent = Serial.WriteSerialPort(to_send);
-        std::this_thread::sleep_for(100ms);
-        this->WaitForResponse();
-    }
-    void Move(int x, int y) {
-        if (x < 0 || x>400 || y < 0 || y>400) throw "BAD_RANGE_ON_AXIS";
-        long do_wyslania = 1000000 + 1000 * x + y;
-        std::string read_in = std::to_string(do_wyslania);
-        read_in[0] = 'x';
-        std::cout << "Move = " << read_in << std::endl;
-        char* to_send = &read_in[0];
-        bool is_sent = Serial.WriteSerialPort(to_send);
-        std::cout << is_sent << std::endl;
-        std::this_thread::sleep_for(100ms);
-        this->WaitForResponse();
-    }
-    void Move(std::pair<int, int> point) {
-        this->Move(point.first, point.second);
-    }
-    void WaitForResponse() {
-        while (1) {
-            string incoming = Serial.ReadSerialPort(1, "greater_less_than");
-            if (incoming != "") {
-                break;
-            }
-        }
-    }
+enum TRYB_PRACY {
+    MANUAL = 0,
+    KONSOLA = 1,
+    MYSZ = 2
 };
+
+TRYB_PRACY mode = TRYB_PRACY::MYSZ;
+/*********************************************/
 
 FIG getContour(const cv::Mat& image_test, cv::Mat& image_draw) {
     std::vector<std::vector<cv::Point>> contours;
@@ -163,7 +116,7 @@ int main()
     std::cout << font.loadFromFile("ariblk.ttf");
     sf::Sound sound;
 
-    Robot robot;
+    Robot robot(com_port, COM_BAUD_RATE);
     cv::utils::logging::setLogLevel(cv::utils::logging::LogLevel::LOG_LEVEL_SILENT);
     cv::VideoCapture cap(1);
 
@@ -171,16 +124,8 @@ int main()
     std::cout << X.loadFromFile("x.png") << O.loadFromFile("o.png") << NONE.loadFromFile("none.png") <<
         GRACZ.loadFromFile("gracz.png") << ROBOT.loadFromFile("robot.png") << std::endl;
 
-    //cout << "Prosze wpisac znak, ktorymi ma grac robot (x/o): ";
     char znak_dla_robota = 'o';
-    //cin >> znak_dla_robota;
-
-    //cout << "Zaczynasz Ty (wpisz T lub J), czy robot (wpisz R): ";
-    //char czyja_kolej;
-    //cin >> czyja_kolej;
     bool czy_teraz_gra_robot = true;
-    //if (czyja_kolej == 'J' || czyja_kolej == 'j' || czyja_kolej == 'T' || czyja_kolej == 't') czy_teraz_gra_robot = false;
-    //else czy_teraz_gra_robot = true;
 
     sf::Sprite wybor_gracza_kolko; wybor_gracza_kolko.setTexture(O); wybor_gracza_kolko.setPosition(10, 50); wybor_gracza_kolko.setScale(0.2, 0.2);
     sf::Sprite wybor_gracza_krzyzyk; wybor_gracza_krzyzyk.setTexture(X); wybor_gracza_krzyzyk.setPosition(300, 50); wybor_gracza_krzyzyk.setScale(0.2, 0.2);
@@ -196,30 +141,23 @@ int main()
         window.clear(sf::Color::Black);
         if (MODE_WINDOW == 0) {
 
-            sf::Text figura_dla_robota;
-            sf::Text kto_zaczyna_wybor;
-            sf::Text spacja;
-            sf::Text decyzja;
+            std::vector <sf::Text> napisy(5);
 
-            figura_dla_robota.setFont(font); figura_dla_robota.setString(L"Proszę wybrać figurę, którą ma grać robot");
-            kto_zaczyna_wybor.setFont(font); kto_zaczyna_wybor.setString(L"Proszę wybrać, kto zaczyna grę");
-            spacja.setFont(font); spacja.setString(L"Aby koontynuować, proszę nacisnąć spację...");
-            decyzja.setFont(font);
+            for (auto& el : napisy) {
+                el.setFont(font);
+                el.setFillColor(sf::Color::White);
+                el.setCharacterSize(32);
+            }
 
-            figura_dla_robota.setCharacterSize(32);
-            kto_zaczyna_wybor.setCharacterSize(32);
-            spacja.setCharacterSize(28);
-            decyzja.setCharacterSize(32);
+            napisy[0].setString(L"Proszę wybrać figurę, którą ma grać robot");
+            napisy[1].setString(L"Proszę wybrać, kto zaczyna grę");
+            napisy[2].setString(L"Aby koontynuować, proszę nacisnąć spację...");
 
-            figura_dla_robota.setFillColor(sf::Color::White);
-            kto_zaczyna_wybor.setFillColor(sf::Color::White);
-            spacja.setFillColor(sf::Color::White);
-            decyzja.setFillColor(sf::Color::White);
-            
-            figura_dla_robota.setPosition(10, 10);
-            kto_zaczyna_wybor.setPosition(10, 290);
-            spacja.setPosition(10, 650);
-            decyzja.setPosition(10, 600);
+            napisy[0].setPosition(10, 10);
+            napisy[1].setPosition(10, 290);
+            napisy[2].setPosition(10, 650);
+            napisy[3].setPosition(10, 550);
+            napisy[4].setPosition(10, 600);
 
             sf::Event event;
             while (window.pollEvent(event))
@@ -230,7 +168,6 @@ int main()
                 if (event.type == sf::Event::MouseButtonPressed) {
                     if (event.mouseButton.button == sf::Mouse::Left) {
                         sf::Vector2i mouse_pos = sf::Mouse::getPosition(window);
-                        //std::cout << "Mouse clicked: " << mouse_pos.x << ", " << mouse_pos.y << std::endl;
                         if (wybor_gracza_kolko.getGlobalBounds().contains(mouse_pos.x, mouse_pos.y)) {
                             znak_dla_robota = 'o';
                             engine.SetZnak(znak_dla_robota);
@@ -251,7 +188,15 @@ int main()
                 if (event.type == sf::Event::KeyReleased) {
                     if (event.key.code == sf::Keyboard::Space) {
                         MODE_WINDOW = 1;
-
+                    }
+                    else if (event.key.code == sf::Keyboard::Num1) {
+                        mode = TRYB_PRACY::MYSZ;
+                    }
+                    else if (event.key.code == sf::Keyboard::Num2) {
+                        mode = TRYB_PRACY::KONSOLA;
+                    }
+                    else if (event.key.code == sf::Keyboard::Num3) {
+                        mode = TRYB_PRACY::MANUAL;
                     }
                 }
             }
@@ -265,12 +210,17 @@ int main()
             else {
                 tekst_decyzji += "sz Ty";
             }
-            decyzja.setString(tekst_decyzji);
+            napisy[3].setString(tekst_decyzji);
+            
+            string info_tryb_pracy = "Wybrany tryb pracy (1-2-3) to ";
+            if (mode == TRYB_PRACY::MYSZ) info_tryb_pracy += "MYSZ (GUI)";
+            else if (mode == TRYB_PRACY::KONSOLA) info_tryb_pracy += "KONSOLA";
+            else info_tryb_pracy += "MANUAL";
+            napisy[4].setString(info_tryb_pracy);
 
-            window.draw(figura_dla_robota);
-            window.draw(kto_zaczyna_wybor);
-            window.draw(spacja);
-            window.draw(decyzja);
+            for (const auto& el : napisy) {
+                window.draw(el);
+            }
             window.draw(wybor_gracza_kolko);
             window.draw(wybor_gracza_krzyzyk);
             window.draw(kto_zaczyna_robot);
@@ -383,14 +333,10 @@ int main()
                     else if (ktos_wygral == 'o' && znak_dla_robota == 'o') sound.setBuffer(kolko_robot);
                     else if (ktos_wygral == 'x' && znak_dla_robota == 'o') sound.setBuffer(krzyzyk_dla_Ciebie);
                     else if (ktos_wygral == 'o' && znak_dla_robota == 'x') sound.setBuffer(kolko_dla_Ciebie);
-                    //std::cout << sound.getBuffer() << endl;
-                    //cout << "Teraz zagram: ";
-                    //sound.play();
                 }
                 else {
                     std::cout << "Nikt nie wygral, skonczyly sie puste gniazda na szachownicy :(" << std::endl;
                     sound.setBuffer(full);
-                    //sound.play();
                 }
                 sound.play();
                 while (sound.getStatus() == sf::Sound::Playing) {
@@ -399,8 +345,6 @@ int main()
                 break;
             }
             Engine::Move bestMove = engine.findBestMove(board);
-
-            //std::cout << "Teraz nalezaloby odlozyc 'o' w miejsce wiersz = " << bestMove.row << "   kolumna = " << bestMove.col << std::endl;
 
             if (czy_teraz_gra_robot) {
                 cout << "Teraz gra robot!" << endl;
@@ -418,24 +362,28 @@ int main()
                 robot.Place();
                 robot.Move(0, 0);
 
-                cv::waitKey(0);
+                //cv::waitKey(0);
             }
 
-            else {/*!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
-                //cout << "Teraz grasz Ty! " << std::endl;
-                //cout << "Pytanie do Ciebie - kladziesz swoja figure recznie czy ma zrobic to robot (R- robot): ";
-                char dec = 'R';
-                //cin >> dec;
-                if (dec == 'R' || dec == 'r') {
-                    int row, col;
-                    //cout << "Podaj nr wiersza (0-2) "; cin >> row;
-                    //cout << "Podaj nr kolumny (0-2) "; cin >> col;
+            else {
+                int row, col;
+                    
+                if (mode == TRYB_PRACY::MANUAL) {
+                    std::cout << "Poloz karteczke i nacisnij dowolny klawisz, aby koontynuowac...";
+                    char c;
+                    cin >> c;
+                }
+                else if (mode == TRYB_PRACY::KONSOLA) {
+                    cout << "Podaj nr wiersza (0-2) "; cin >> row;
+                    cout << "Podaj nr kolumny (0-2) "; cin >> col;
+                }
+                else {
                     bool uzytkownik_wybral = false;
                     while (!uzytkownik_wybral) {
                         if (sf::Mouse::isButtonPressed(sf::Mouse::Left)) {
                             std::cout << "Middle mouse button is pressed" << std::endl;
                             sf::Vector2i mouse_pos = sf::Mouse::getPosition(window);
-                            for (int i=0; i < visualize.size(); i++) {
+                            for (int i = 0; i < visualize.size(); i++) {
                                 if (visualize[i].getGlobalBounds().contains(mouse_pos.x, mouse_pos.y)) {
                                     if (visualize[i].getTexture() == &NONE) {
                                         row = i % 3;
@@ -448,8 +396,9 @@ int main()
                         }
                         std::cout << "Czekam..." << std::endl;
                     }
-                    
+                }
 
+                if (mode != TRYB_PRACY::MANUAL) {
                     if (znak_dla_robota == 'x') {
                         robot.Move(POZYCJE_O[ktory_O_pobrac]);
                         ktory_O_pobrac++;
@@ -464,11 +413,12 @@ int main()
                     robot.Place();
                     robot.Move(0, 0);
                 }
-                cv::waitKey(0);
+                //cv::waitKey(0);
             }
 
             cv::destroyAllWindows();
             czy_teraz_gra_robot = !czy_teraz_gra_robot;
+
         }
         window.display();
     }
